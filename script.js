@@ -1,4 +1,4 @@
-// ⚠️ En producción, este token debe ir en backend (no en el frontend)
+// ⚠️ En producción, mueve este token al backend.
 const API_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Inhpb21hcmF2ZXJhcGVyZXoyNkBnbWFpbC5jb20ifQ.4xtw1x9_oL0eTFr3M50L-gUlFZMDL_eB2mFhmCUWo4E";
 const BASE_URL = "https://dniruc.apisperu.com/api/v1";
 
@@ -7,560 +7,439 @@ let prestamosRegistrados = [];
 let tipoConsulta = 'dni';
 let prestamoActualParaCronograma = null;
 
-// ---------------------------
-// Inicialización
-// ---------------------------
-document.addEventListener('DOMContentLoaded', function() {
-  const today = new Date();
-  const todayISO = today.toISOString().split('T')[0];
-  const fechaInicio = document.getElementById('fechaInicio');
-  fechaInicio.value = todayISO;
-  fechaInicio.min = todayISO;
+// =============== Inicialización ===============
+document.addEventListener('DOMContentLoaded', () => {
+  const today = new Date().toISOString().split('T')[0];
+  fechaInicio.value = today;
+  fechaInicio.min = today;
 
-  // Cargar préstamos persistidos
-  const prestamosGuardados = localStorage.getItem("prestamosRegistrados");
-  if (prestamosGuardados) {
-    prestamosRegistrados = JSON.parse(prestamosGuardados);
-  }
+  const guardados = localStorage.getItem("prestamosRegistrados");
+  if (guardados) prestamosRegistrados = JSON.parse(guardados);
 
   actualizarListaPrestamos();
   actualizarCalculos();
 });
 
-// Persistencia
-function guardarPrestamos() {
-  localStorage.setItem("prestamosRegistrados", JSON.stringify(prestamosRegistrados));
-}
+function guardarPrestamos(){ localStorage.setItem("prestamosRegistrados", JSON.stringify(prestamosRegistrados)); }
 
-// Borrar datos locales
-function borrarDatosLocales() {
-  const total = prestamosRegistrados.length;
-  if (total === 0) {
-    mostrarNotificacion("No hay datos para borrar.", "info");
-    return;
-  }
-  const ok = confirm(`Esto eliminará ${total} préstamo(s) guardado(s) en este navegador. ¿Deseas continuar?`);
-  if (!ok) return;
-
-  try {
-    localStorage.removeItem("prestamosRegistrados");
-    prestamosRegistrados = [];
-    actualizarListaPrestamos();
-    mostrarNotificacion("Datos locales eliminados correctamente.", "success");
-  } catch (e) {
-    mostrarNotificacion("No se pudieron borrar los datos locales.", "error");
-  }
-}
-
-// ---------------------------
-// UI Helpers
-// ---------------------------
-function cambiarTipoConsulta(tipo) {
+// =============== UI Helpers ===============
+function cambiarTipoConsulta(tipo){
   tipoConsulta = tipo;
-  document.getElementById('btnDni').classList.toggle('active', tipo === 'dni');
-  document.getElementById('btnRuc').classList.toggle('active', tipo === 'ruc');
-  document.getElementById('dniSection').classList.toggle('hidden', tipo !== 'dni');
-  document.getElementById('rucSection').classList.toggle('hidden', tipo !== 'ruc');
-  if (tipo === 'dni') document.getElementById('dni').value = '';
-  else document.getElementById('ruc').value = '';
+  btnDni.classList.toggle('active', tipo==='dni');
+  btnRuc.classList.toggle('active', tipo==='ruc');
+  dniSection.classList.toggle('hidden', tipo!=='dni');
+  rucSection.classList.toggle('hidden', tipo!=='ruc');
+  (tipo==='dni' ? dni : ruc).value = '';
   limpiarResultadoVerificacion();
 }
+function mostrarNotificacion(m,t='info'){const n=notification;n.textContent=m;n.className=`notification ${t}`;n.classList.remove('hidden');setTimeout(()=>n.classList.add('hidden'),4500)}
+function mostrarCargando(s){btnText.classList.toggle('hidden',s);loadingSpinner.classList.toggle('hidden',!s);btnVerificar.disabled=s}
 
-function mostrarNotificacion(mensaje, tipo) {
-  const notification = document.getElementById('notification');
-  notification.textContent = mensaje;
-  notification.className = `notification ${tipo}`;
-  notification.classList.remove('hidden');
-  setTimeout(() => notification.classList.add('hidden'), 5000);
-}
+// =============== Consulta DNI/RUC ===============
+async function verificarCliente(){
+  const valor = (tipoConsulta==='dni'?dni.value.trim():ruc.value.trim());
+  if (!valor) return mostrarNotificacion(`Ingrese ${tipoConsulta.toUpperCase()} válido`,'error');
+  if (tipoConsulta==='dni' && (valor.length!==8||isNaN(valor))) return mostrarNotificacion('DNI debe tener 8 dígitos','error');
+  if (tipoConsulta==='ruc' && (valor.length!==11||isNaN(valor))) return mostrarNotificacion('RUC debe tener 11 dígitos','error');
 
-function mostrarCargando(mostrar) {
-  const btnText = document.getElementById('btnText');
-  const loadingSpinner = document.getElementById('loadingSpinner');
-  const btnVerificar = document.getElementById('btnVerificar');
-  if (mostrar) {
-    btnText.classList.add('hidden');
-    loadingSpinner.classList.remove('hidden');
-    btnVerificar.disabled = true;
-  } else {
-    btnText.classList.remove('hidden');
-    loadingSpinner.classList.add('hidden');
-    btnVerificar.disabled = false;
-  }
-}
+  mostrarCargando(true); mostrarNotificacion('Consultando con RENIEC/SUNAT...','info');
+  try{
+    const res = await fetch(`${BASE_URL}/${tipoConsulta}/${valor}?token=${API_TOKEN}`);
+    if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`);
+    const data = await res.json(); if (data.error) throw new Error(data.error);
 
-// ---------------------------
-// Consultas RENIEC/SUNAT
-// ---------------------------
-async function verificarCliente() {
-  const valor = (tipoConsulta === 'dni'
-    ? document.getElementById('dni').value.trim()
-    : document.getElementById('ruc').value.trim());
-
-  if (!valor) {
-    mostrarNotificacion(`Por favor ingrese un ${tipoConsulta.toUpperCase()} válido`, 'error');
-    return;
-  }
-  if (tipoConsulta === 'dni' && (valor.length !== 8 || isNaN(valor))) {
-    mostrarNotificacion('Por favor ingrese un DNI válido de 8 dígitos', 'error');
-    return;
-  }
-  if (tipoConsulta === 'ruc' && (valor.length !== 11 || isNaN(valor))) {
-    mostrarNotificacion('Por favor ingrese un RUC válido de 11 dígitos', 'error');
-    return;
-  }
-
-  mostrarCargando(true);
-  mostrarNotificacion('Consultando con RENIEC/SUNAT...', 'info');
-
-  try {
-    const url = `${BASE_URL}/${tipoConsulta}/${valor}?token=${API_TOKEN}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
-
-    if (tipoConsulta === 'dni') {
-      clienteVerificado = {
-        nombre: `${data.nombres} ${data.apellidoPaterno} ${data.apellidoMaterno}`,
-        documento: data.dni,
-        tipo: 'Persona Natural',
-        direccion: data.direccion || 'No disponible',
-        estado: 'Activo'
-      };
+    if (tipoConsulta==='dni'){
+      clienteVerificado = { nombre:`${data.nombres} ${data.apellidoPaterno} ${data.apellidoMaterno}`, documento:data.dni, tipo:'Persona Natural', direccion:data.direccion||'No disponible', estado:'Activo' };
     } else {
-      clienteVerificado = {
-        nombre: data.razonSocial,
-        documento: data.ruc,
-        tipo: data.tipo === 'NATURAL' ? 'Persona Natural' : 'Persona Jurídica',
-        direccion: data.direccion || 'No disponible',
-        estado: data.estado || 'Activo'
-      };
+      clienteVerificado = { nombre:data.razonSocial, documento:data.ruc, tipo:data.tipo==='NATURAL'?'Persona Natural':'Persona Jurídica', direccion:data.direccion||'No disponible', estado:data.estado||'Activo' };
     }
-
-    mostrarResultadoVerificacion();
-    mostrarNotificacion('Cliente verificado exitosamente', 'success');
-  } catch (error) {
-    clienteVerificado = null;
-    limpiarResultadoVerificacion();
-    mostrarNotificacion(`Error al consultar: ${error.message}`, 'error');
-  } finally {
-    mostrarCargando(false);
-  }
+    mostrarResultadoVerificacion(); mostrarNotificacion('Cliente verificado correctamente','success');
+  }catch(e){ clienteVerificado=null; limpiarResultadoVerificacion(); mostrarNotificacion(`Error al consultar: ${e.message}`,'error'); }
+  finally{ mostrarCargando(false); }
 }
-
-function mostrarResultadoVerificacion() {
+function mostrarResultadoVerificacion(){
   if (!clienteVerificado) return;
-  document.getElementById('nombreCliente').textContent = clienteVerificado.nombre;
-  document.getElementById('documentoCliente').textContent = clienteVerificado.documento;
-  document.getElementById('tipoCliente').textContent = clienteVerificado.tipo;
-  document.getElementById('direccionCliente').textContent = clienteVerificado.direccion;
-  document.getElementById('estadoCliente').textContent = clienteVerificado.estado;
+  nombreCliente.textContent=clienteVerificado.nombre;
+  documentoCliente.textContent=clienteVerificado.documento;
+  tipoCliente.textContent=clienteVerificado.tipo;
+  direccionCliente.textContent=clienteVerificado.direccion;
+  estadoCliente.textContent=clienteVerificado.estado;
+  customerInfo.classList.remove('hidden'); btnRegistrar.disabled=false;
+}
+function limpiarResultadoVerificacion(){ customerInfo.classList.add('hidden'); btnRegistrar.disabled=true; }
 
-  document.getElementById('customerInfo').classList.remove('hidden');
-  document.getElementById('btnRegistrar').disabled = false;
+// =============== Utilidades de fecha y cálculo ===============
+function sumarMeses(iso,meses){const d=new Date(iso+'T00:00:00');d.setMonth(d.getMonth()+meses);return d.toISOString().split('T')[0]}
+function formatearFechaParaTabla(iso){const [y,m,d]=iso.split('-');return `${d}/${m}/${y}`}
+function formatearFechaParaCronograma(iso){const f=new Date(iso+'T00:00:00');return f.toLocaleDateString('es-PE',{year:'numeric',month:'long',day:'numeric'})}
+function calcularCuotaFija(M,iA,pl){const i=iA/100/12;if(i===0)return M/pl;return M*(i*Math.pow(1+i,pl))/(Math.pow(1+i,pl)-1)}
+function diffDias(a,b){const d1=new Date(a+'T00:00:00'),d2=new Date(b+'T00:00:00');return Math.floor((d2-d1)/(1000*60*60*24))}
+
+// --- Feriados Perú (incluye Jueves/Viernes Santo por año) ---
+function easterSunday(year){
+  const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),month=Math.floor((h+l-7*m+114)/31),day=((h+l-7*m+114)%31)+1;
+  return new Date(Date.UTC(year, month-1, day));
+}
+function toISO(d){return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().split('T')[0]}
+function addDaysISO(iso,days){const d=new Date(iso+'T00:00:00');d.setDate(d.getDate()+days);return d.toISOString().split('T')[0]}
+
+function getFeriadosPeru(year){
+  const set=new Set();
+  const fijos=[[1,1],[5,1],[6,7],[6,29],[7,28],[7,29],[8,30],[10,8],[11,1],[12,8],[12,9],[12,25]];
+  fijos.forEach(([m,d])=>set.add(`${year}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`));
+  const pascua=easterSunday(year); const pascuaISO=toISO(pascua);
+  set.add(addDaysISO(pascuaISO,-3)); // Jueves Santo
+  set.add(addDaysISO(pascuaISO,-2)); // Viernes Santo
+  return set;
 }
 
-function limpiarResultadoVerificacion() {
-  clienteVerificado = null;
-  document.getElementById('customerInfo').classList.add('hidden');
-  document.getElementById('btnRegistrar').disabled = true;
+function esDomingo(fechaISO){ const d=new Date(fechaISO+'T00:00:00'); return d.getDay()===0; }
+function esFeriadoPeru(fechaISO){
+  const y = parseInt(fechaISO.slice(0,4),10);
+  const feriados = getFeriadosPeru(y);
+  return feriados.has(fechaISO);
+}
+function siguienteHabilSiDomingoOFeriado(fechaISO){
+  let f = fechaISO;
+  while (esDomingo(f) || esFeriadoPeru(f)) {
+    f = addDaysISO(f, 1);
+  }
+  return f;
 }
 
-// ---------------------------
-// Utilidades de fechas y cálculo
-// ---------------------------
-function sumarMeses(fechaISO, meses) {
-  const fecha = new Date(fechaISO + 'T00:00:00');
-  fecha.setMonth(fecha.getMonth() + meses);
-  return fecha.toISOString().split('T')[0];
+// Cálculos en vivo
+['monto','interes','plazo','fechaInicio'].forEach(id=>document.getElementById(id).addEventListener(id==='fechaInicio'?'change':'input', actualizarCalculos));
+function actualizarCalculos(){
+  const monto=parseFloat(montoInput('monto')), interes=parseFloat(montoInput('interes')), plazo=parseInt(montoInput('plazo')), f0=fechaInicio.value;
+  if(monto>0 && interes>=0 && plazo>0 && f0){
+    const cuota=calcularCuotaFija(monto,interes,plazo), total=cuota*plazo, interTotal=total-monto, f1=sumarMeses(f0,1), fN=sumarMeses(f0,plazo);
+    montoPrestado.textContent=`S/ ${monto.toFixed(2)}`; tasaInteres.textContent=`${interes}%`; interesTotal.textContent=`S/ ${interTotal.toFixed(2)}`; montoTotalPagar.textContent=`S/ ${total.toFixed(2)}`;
+    fechaDesembolsoMostrada.textContent=formatearFechaParaTabla(f0); fechaPrimeraCuotaMostrada.textContent=formatearFechaParaTabla(f1); fechaUltimaCuotaMostrada.textContent=formatearFechaParaTabla(fN);
+    fechaPrimeraCuota.textContent=formatearFechaParaCronograma(f1); montoPrimeraCuota.textContent=`S/ ${cuota.toFixed(2)}`;
+    interesCalculado.classList.remove('hidden'); fechaCalculada.classList.remove('hidden'); primeraCuota.classList.remove('hidden');
+  } else { interesCalculado.classList.add('hidden'); fechaCalculada.classList.add('hidden'); primeraCuota.classList.add('hidden'); }
+}
+function montoInput(id){ return document.getElementById(id).value }
+
+// =============== Registrar préstamo ===============
+function registrarPrestamo(){
+  if(!clienteVerificado) return mostrarNotificacion('Primero verifique al cliente','error');
+  const monto=parseFloat(montoInput('monto')), interes=parseFloat(montoInput('interes')), moraDiaria=parseFloat(montoInput('moraDiaria'))||0, plazo=parseInt(montoInput('plazo')), f0=fechaInicio.value;
+  if(!(monto>0 && interes>=0 && plazo>0 && f0)) return mostrarNotificacion('Complete los campos correctamente','error');
+  const cuota=calcularCuotaFija(monto,interes,plazo), total=cuota*plazo, interTotal=total-monto, f1=sumarMeses(f0,1), fN=sumarMeses(f0,plazo);
+  const prestamo={
+    id:Date.now(), nroPrestamo:Math.floor(100000+Math.random()*899999).toString(),
+    analista:(analista.value || '—').trim(), caja:(caja.value || '—').trim(),
+    cliente:clienteVerificado.nombre, documento:clienteVerificado.documento,
+    fechaRegistro:new Date().toLocaleDateString('es-PE'), fechaDesembolso:f0, fechaPrimeraCuota:f1, fechaUltimaCuota:fN,
+    monto, interes, interesTotal:interTotal, plazo, cuotaMensual:cuota, montoTotal:total,
+    moraDiaria, cuotasPagadas:0, moraAcumulada:0, pagos:[]
+  };
+  prestamosRegistrados.push(prestamo); guardarPrestamos(); actualizarListaPrestamos(); limpiarFormularioPrestamo(); mostrarNotificacion('Préstamo registrado exitosamente','success');
+}
+function limpiarFormularioPrestamo(){['monto','analista','caja'].forEach(id=>document.getElementById(id).value=''); interes.value='5'; moraDiaria.value='0.05'; plazo.value='12'; fechaInicio.value=new Date().toISOString().split('T')[0]; interesCalculado.classList.add('hidden'); fechaCalculada.classList.add('hidden'); primeraCuota.classList.add('hidden')}
+
+// =============== Listado (eliminar / abrir cronograma) ===============
+function actualizarListaPrestamos(){
+  totalPrestamos.textContent=prestamosRegistrados.length;
+  if(prestamosRegistrados.length===0){loansList.innerHTML='<p id="noLoans">No hay préstamos registrados aún.</p>';return;}
+  const ordenados=[...prestamosRegistrados].sort((a,b)=>new Date(b.fechaDesembolso)-new Date(a.fechaDesembolso));
+  loansList.innerHTML=ordenados.map(p=>`
+    <div class="loan-item">
+      <div class="loan-actions">
+        <button class="generate-btn" onclick="abrirModalCronograma(${p.id})">Cronograma</button>
+        <button class="delete-btn" onclick="eliminarPrestamo(${p.id})">Eliminar</button>
+      </div>
+      <h4>${p.cliente}</h4>
+      <div class="loan-details">
+        <div><strong>Registro:</strong> ${p.fechaRegistro}</div>
+        <div><strong>Doc:</strong> ${p.documento}</div>
+        <div><strong>Desembolso:</strong> ${formatearFechaParaTabla(p.fechaDesembolso)}</div>
+        <div><strong>Primera:</strong> ${formatearFechaParaTabla(p.fechaPrimeraCuota)}</div>
+        <div><strong>Última:</strong> ${formatearFechaParaTabla(p.fechaUltimaCuota)}</div>
+        <div><strong>Monto:</strong> S/ ${p.monto.toFixed(2)}</div>
+        <div><strong>Interés:</strong> ${p.interes}%</div>
+        <div><strong>Interés Total:</strong> S/ ${p.interesTotal.toFixed(2)}</div>
+        <div><strong>Cuota:</strong> S/ ${p.cuotaMensual.toFixed(2)}</div>
+        <div><strong>Plazo:</strong> ${p.plazo} meses</div>
+        <div><strong>Total:</strong> S/ ${p.montoTotal.toFixed(2)}</div>
+        <div><strong>Pagadas:</strong> ${p.cuotasPagadas}</div>
+      </div>
+    </div>`).join('');
+}
+function eliminarPrestamo(id){
+  const i=prestamosRegistrados.findIndex(p=>p.id===id); if(i===-1) return;
+  if(!confirm('¿Eliminar este préstamo?')) return;
+  const wasOpen = prestamoActualParaCronograma && prestamoActualParaCronograma.id===id;
+  prestamosRegistrados.splice(i,1); guardarPrestamos(); actualizarListaPrestamos();
+  if (wasOpen) cerrarModalCronograma();
+  mostrarNotificacion('Préstamo eliminado','success');
 }
 
-function formatearFechaParaMostrar(fechaISO) {
-  const [y, m, d] = fechaISO.split('-');
-  return `${d}/${m}/${y}`;
+// =============== Cronograma / Modal ===============
+function generarCronogramaEnModal(p){
+  cronogramaClienteModal.textContent=p.cliente;
+  cronogramaDocumentoModal.textContent=`Documento: ${p.documento}`;
+  cronogramaDetallesModal.textContent=`Monto: S/ ${p.monto.toFixed(2)} | Tasa: ${p.interes}% | Plazo: ${p.plazo} meses | Mora diaria: ${p.moraDiaria}%`;
+
+  const tbody=cronogramaBodyModal; tbody.innerHTML='';
+  const cuota=p.cuotaMensual; let saldo=p.monto, totA=0, totI=0;
+  for(let i=1;i<=p.plazo;i++){
+    const vtoISO=sumarMeses(p.fechaDesembolso,i), fecha=formatearFechaParaTabla(vtoISO), iM=p.interes/100/12;
+    const interes=saldo*iM; let amort=cuota-interes; let cuotaReal=cuota; if(i===p.plazo){amort=saldo;cuotaReal=amort+interes}
+    saldo-=amort; totA+=amort; totI+=interes;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${i}</td><td>${fecha}</td><td>S/ ${amort.toFixed(2)}</td><td>S/ ${interes.toFixed(2)}</td><td>S/ ${cuotaReal.toFixed(2)}</td><td>S/ ${saldo.toFixed(2)}</td>`;
+    tr.style.opacity=(p.cuotasPagadas||0)>=i ? '.55' : '1';
+    tbody.appendChild(tr);
+  }
+  totalAmortizacionModal.textContent=`S/ ${totA.toFixed(2)}`;
+  totalInteresModal.textContent=`S/ ${totI.toFixed(2)}`;
+  totalCuotaModal.textContent=`S/ ${(totA+totI).toFixed(2)}`;
+  saldoFinalModal.textContent=`S/ ${saldo.toFixed(2)}`;
+
+  // Próxima cuota (ajustada por domingo/feriado)
+  const prox = obtenerProximaCuotaNoPagada(p);
+  let texto = 'Todas las cuotas están pagadas.';
+  if (prox) {
+    const vtoAjust = siguienteHabilSiDomingoOFeriado(prox.fechaVencISO);
+    const etiqueta = (vtoAjust!==prox.fechaVencISO) ? ' (ajustada por día no laborable)' : '';
+    texto = `Próxima cuota: N° ${prox.nCuota} • Vence: ${formatearFechaParaTabla(vtoAjust)}${etiqueta} • Monto: S/ ${prox.montoCuota.toFixed(2)}`;
+  }
+  proximaInfoTexto.textContent = texto;
+
+  fechaPagoInput.value = new Date().toISOString().split('T')[0];
+  moraEditableInput.value = (p.moraDiaria ?? 0).toString();
+  renderHistorialPagos(p);
+
+  prestamoActualParaCronograma=p;
+}
+function abrirModalCronograma(id){const p=prestamosRegistrados.find(x=>x.id===id);if(!p)return;generarCronogramaEnModal(p);cronogramaModal.style.display='block'}
+function cerrarModalCronograma(){cronogramaModal.style.display='none';prestamoActualParaCronograma=null}
+window.onclick=function(e){if(e.target===cronogramaModal) cerrarModalCronograma()}
+
+// =============== Pagos + Mora + Historial ===============
+function obtenerProximaCuotaNoPagada(p){const n=(p.cuotasPagadas||0)+1; if(n>p.plazo) return null; return {nCuota:n,fechaVencISO:sumarMeses(p.fechaDesembolso,n),montoCuota:p.cuotaMensual};}
+
+function registrarPagoCuotaSiguiente(){
+  if(!prestamoActualParaCronograma) return mostrarNotificacion("No hay cronograma abierto.","error");
+  const p=prestamoActualParaCronograma;
+  const prox=obtenerProximaCuotaNoPagada(p); if(!prox) return mostrarNotificacion("Todas las cuotas ya están pagadas.","info");
+
+  const fechaPago = fechaPagoInput.value || new Date().toISOString().split('T')[0];
+
+  // Ajuste por día no laborable
+  const vtoAjust = siguienteHabilSiDomingoOFeriado(prox.fechaVencISO);
+
+  const diasAtraso = Math.max(0, diffDias(vtoAjust, fechaPago));
+  let mora = 0;
+  if (diasAtraso >= 1 && p.moraDiaria > 0){
+    mora = +(prox.montoCuota * (p.moraDiaria/100) * diasAtraso).toFixed(2);
+  }
+
+  p.cuotasPagadas = (p.cuotasPagadas || 0) + 1;
+  p.moraAcumulada = +((p.moraAcumulada || 0) + mora).toFixed(2);
+  p.pagos.push({ nCuota: prox.nCuota, fechaPagoISO: fechaPago, moraCobrada: mora, montoCuota: prox.montoCuota });
+
+  const idx = prestamosRegistrados.findIndex(x=>x.id===p.id); if(idx!==-1) prestamosRegistrados[idx]=p;
+  guardarPrestamos();
+  generarCronogramaEnModal(p);
+  actualizarListaPrestamos();
+
+  mostrarNotificacion(mora>0
+    ? `Cuota ${prox.nCuota} pagada con ${diasAtraso} día(s) de atraso. Mora: S/ ${mora.toFixed(2)}`
+    : `Cuota ${prox.nCuota} pagada sin mora.`, 'success');
 }
 
-function formatearFechaParaTabla(fechaISO) {
-  const [y, m, d] = fechaISO.split('-');
-  return `${d}/${m}/${y}`;
+function actualizarMoraDiariaPrestamo(){
+  if(!prestamoActualParaCronograma) return mostrarNotificacion("No hay cronograma abierto.","error");
+  const val = parseFloat(moraEditableInput.value);
+  if (isNaN(val) || val < 0) return mostrarNotificacion("Ingresa una mora diaria válida (>= 0).","error");
+  prestamoActualParaCronograma.moraDiaria = val;
+  const idx = prestamosRegistrados.findIndex(p=>p.id===prestamoActualParaCronograma.id);
+  if (idx !== -1) prestamosRegistrados[idx].moraDiaria = val;
+  guardarPrestamos();
+  generarCronogramaEnModal(prestamoActualParaCronograma);
+  actualizarListaPrestamos();
+  mostrarNotificacion("Mora diaria actualizada.","success");
 }
 
-function formatearFechaParaCronograma(fechaISO) {
-  const fecha = new Date(fechaISO + 'T00:00:00');
-  const opciones = { year: 'numeric', month: 'long', day: 'numeric' };
-  return fecha.toLocaleDateString('es-PE', opciones);
+function anularUltimoPago(){
+  if(!prestamoActualParaCronograma) return mostrarNotificacion("No hay cronograma abierto.","error");
+  const p=prestamoActualParaCronograma;
+  if(!p.pagos || p.pagos.length===0) return mostrarNotificacion("No hay pagos para anular.","info");
+  const ultimo=p.pagos[p.pagos.length-1];
+  const ok=confirm(`¿Anular el último pago? (Cuota ${ultimo.nCuota}, ${ultimo.fechaPagoISO}, Mora S/ ${(+ultimo.moraCobrada).toFixed(2)})`);
+  if(!ok) return;
+
+  p.pagos.pop();
+  p.cuotasPagadas = Math.max(0,(p.cuotasPagadas||0)-1);
+  p.moraAcumulada = +((p.moraAcumulada||0) - (+ultimo.moraCobrada||0)).toFixed(2);
+
+  const idx=prestamosRegistrados.findIndex(x=>x.id===p.id); if(idx!==-1) prestamosRegistrados[idx]=p;
+  guardarPrestamos();
+  generarCronogramaEnModal(p);
+  actualizarListaPrestamos();
+  mostrarNotificacion(`Pago de la cuota ${ultimo.nCuota} anulado.`,'success');
 }
 
-function calcularCuotaFija(monto, tasaInteresAnual, plazoMeses) {
-  const tasaMensual = tasaInteresAnual / 100 / 12;
-  if (tasaMensual === 0) return monto / plazoMeses;
-  return monto * (tasaMensual * Math.pow(1 + tasaMensual, plazoMeses)) / (Math.pow(1 + tasaMensual, plazoMeses) - 1);
+function renderHistorialPagos(p){
+  const body=historialPagosBody;
+  if(!p.pagos || p.pagos.length===0){ body.innerHTML='<tr><td colspan="5">Sin pagos aún.</td></tr>'; return; }
+  const last=p.pagos.length-1;
+  body.innerHTML = p.pagos.map((pg,i)=>`
+    <tr>
+      <td>${pg.nCuota}</td>
+      <td>${formatearFechaParaTabla(pg.fechaPagoISO)}</td>
+      <td>S/ ${(+pg.moraCobrada).toFixed(2)}</td>
+      <td>S/ ${(+pg.montoCuota).toFixed(2)}</td>
+      <td>${ i===last ? '<button class="mini-btn mini-btn-danger" onclick="anularUltimoPago()">Anular</button>' : '<span style="color:#718096;">—</span>' }</td>
+    </tr>
+  `).join('');
 }
 
-function actualizarCalculos() {
-  const montoInput = document.getElementById('monto').value;
-  const interesInput = document.getElementById('interes').value;
-  const plazoInput = document.getElementById('plazo').value;
-  const fechaInicioInput = document.getElementById('fechaInicio').value;
+// =============== PDF: Imprimir (diálogo nativo) ===============
+function imprimirCronogramaActual(){
+  if(!prestamoActualParaCronograma) return;
+  const html = generarHTMLCronograma(prestamoActualParaCronograma);
+  const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+  setTimeout(()=>{ w.focus(); w.print(); }, 250);
+}
 
-  if (montoInput && interesInput && plazoInput && fechaInicioInput) {
-    const monto = parseFloat(montoInput);
-    const interes = parseFloat(interesInput);
-    const plazo = parseInt(plazoInput);
-    const fechaDesembolsoISO = fechaInicioInput;
+// =============== PDF real: Compartir / Descargar (.pdf) ===============
+async function generarPDFBlobDesdeHTML(htmlString){
+  const iframe=document.createElement('iframe');
+  iframe.style.position='fixed'; iframe.style.left='-10000px'; iframe.style.top='-10000px';
+  iframe.style.width='1024px'; iframe.style.height='0';
+  document.body.appendChild(iframe);
+  const doc=iframe.contentDocument||iframe.contentWindow.document;
+  doc.open(); doc.write(htmlString); doc.close();
+  await new Promise(r=>setTimeout(r,350));
+  const target=doc.body;
+  const canvas=await html2canvas(target,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+  const { jsPDF }=window.jspdf; const pdf=new jsPDF('p','mm','a4');
+  const imgData=canvas.toDataURL('image/png'); const pdfW=pdf.internal.pageSize.getWidth(); const pdfH=pdf.internal.pageSize.getHeight();
+  const imgWpx=canvas.width, imgHpx=canvas.height, ratio=imgWpx/imgHpx;
+  const imgWmm=pdfW, imgHmm=imgWmm/ratio; let posY=0, heightLeft=imgHmm;
+  pdf.addImage(imgData,'PNG',0,posY,imgWmm,imgHmm); heightLeft-=pdfH;
+  while(heightLeft>0){ pdf.addPage(); posY=-(imgHmm-heightLeft); pdf.addImage(imgData,'PNG',0,posY,imgWmm,imgHmm); heightLeft-=pdfH; }
+  document.body.removeChild(iframe);
+  return pdf.output('blob');
+}
 
-    if (monto <= 0 || interes < 0 || plazo <= 0) {
-      document.getElementById('interesCalculado').classList.add('hidden');
-      document.getElementById('fechaCalculada').classList.add('hidden');
-      document.getElementById('primeraCuota').classList.add('hidden');
+async function compartirCronogramaPDF(){
+  if(!prestamoActualParaCronograma) return mostrarNotificacion("Abre un cronograma antes de compartir.","error");
+  const p=prestamoActualParaCronograma;
+  try{
+    const html=generarHTMLCronograma(p);
+    const blobPDF=await generarPDFBlobDesdeHTML(html);
+    const nombre=`cronograma_${p.cliente.replace(/\s+/g,'_')}_${p.documento}.pdf`;
+    const file=new File([blobPDF], nombre, {type:'application/pdf'});
+
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({title:'Cronograma de Pagos', text:`Cronograma de ${p.cliente} (${p.documento})`, files:[file]});
+      mostrarNotificacion("PDF compartido correctamente.","success");
       return;
     }
-
-    const cuotaFija = calcularCuotaFija(monto, interes, plazo);
-    const montoTotal = cuotaFija * plazo;
-    const interesTotal = montoTotal - monto;
-
-    const fechaPrimeraCuotaISO = sumarMeses(fechaDesembolsoISO, 1);
-    const fechaUltimaCuotaISO = sumarMeses(fechaDesembolsoISO, plazo);
-
-    document.getElementById('montoPrestado').textContent = `S/ ${monto.toFixed(2)}`;
-    document.getElementById('tasaInteres').textContent = `${interes}%`;
-    document.getElementById('interesTotal').textContent = `S/ ${interesTotal.toFixed(2)}`;
-    document.getElementById('montoTotalPagar').textContent = `S/ ${montoTotal.toFixed(2)}`;
-
-    document.getElementById('fechaDesembolsoMostrada').textContent = formatearFechaParaMostrar(fechaDesembolsoISO);
-    document.getElementById('fechaPrimeraCuotaMostrada').textContent = formatearFechaParaMostrar(fechaPrimeraCuotaISO);
-    document.getElementById('fechaUltimaCuotaMostrada').textContent = formatearFechaParaMostrar(fechaUltimaCuotaISO);
-
-    document.getElementById('fechaPrimeraCuota').textContent = formatearFechaParaCronograma(fechaPrimeraCuotaISO);
-    document.getElementById('montoPrimeraCuota').textContent = `S/ ${cuotaFija.toFixed(2)}`;
-
-    document.getElementById('interesCalculado').classList.remove('hidden');
-    document.getElementById('fechaCalculada').classList.remove('hidden');
-    document.getElementById('primeraCuota').classList.remove('hidden');
-  } else {
-    document.getElementById('interesCalculado').classList.add('hidden');
-    document.getElementById('fechaCalculada').classList.add('hidden');
-    document.getElementById('primeraCuota').classList.add('hidden');
-  }
+    const url=URL.createObjectURL(blobPDF);
+    const a=document.createElement('a'); a.href=url; a.download=nombre; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    mostrarNotificacion("PDF descargado. Puedes enviarlo por tu app favorita.","info");
+  }catch(e){ console.error(e); mostrarNotificacion("No se pudo generar el PDF para compartir.","error"); }
 }
 
-// Eventos para cálculos en vivo
-document.getElementById('monto').addEventListener('input', actualizarCalculos);
-document.getElementById('interes').addEventListener('input', actualizarCalculos);
-document.getElementById('plazo').addEventListener('input', actualizarCalculos);
-document.getElementById('fechaInicio').addEventListener('change', actualizarCalculos);
+// =============== Número a letras (Soles) ===============
+function numeroALetrasSoles(n){
+  const u=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve','diez','once','doce','trece','catorce','quince','dieciséis','diecisiete','dieciocho','diecinueve','veinte'];
+  const d=['','', 'veinte','treinta','cuarenta','cincuenta','sesenta','setenta','ochenta','noventa'];
+  const c=['','ciento','doscientos','trescientos','cuatrocientos','quinientos','seiscientos','setecientos','ochocientos','novecientos'];
+  function s(n){if(n<=20)return u[n];if(n<100){const D=Math.floor(n/10),U=n%10;if(n<30)return U?`veinti${u[U]}`:'veinte';return U?`${d[D]} y ${u[U]}`:d[D]}if(n<1000){const C=Math.floor(n/100),R=n%100;if(n===100)return'cien';return R?`${c[C]} ${s(R)}`:c[C]}if(n<1e6){const M=Math.floor(n/1000),R=n%1000;const mil=(M===1)?'mil':`${s(M)} mil`;return R?`${mil} ${s(R)}`:mil}const MM=Math.floor(n/1e6),R=n%1e6;const mill=(MM===1)?'un millón':`${s(MM)} millones`;return R?`${mill} ${s(R)}`:mill}
+  const S=Math.floor(n), Cts=Math.round((n-S)*100); const txt=`${s(S)} ${S===1?'sol':'soles'} con ${Cts.toString().padStart(2,'0')}/100`; return txt.charAt(0).toUpperCase()+txt.slice(1);
+}
 
-// ---------------------------
-// Registro de préstamo
-// ---------------------------
-function registrarPrestamo() {
-  if (!clienteVerificado) {
-    mostrarNotificacion('Primero debe verificar al cliente', 'error');
-    return;
+// =============== HTML del PDF (con recibo e info) ===============
+function generarHTMLCronograma(p){
+  // Próximo pago (ajustado por día no laborable)
+  const prox = obtenerProximaCuotaNoPagada(p);
+  let proximoTexto='—';
+  if(prox){
+    const vtoAjust=siguienteHabilSiDomingoOFeriado(prox.fechaVencISO);
+    proximoTexto = formatearFechaParaTabla(vtoAjust) + (vtoAjust!==prox.fechaVencISO ? ' (ajustada por día no laborable)' : '');
   }
 
-  const monto = parseFloat(document.getElementById('monto').value);
-  const interes = parseFloat(document.getElementById('interes').value);
-  const plazo = parseInt(document.getElementById('plazo').value);
-  const fechaDesembolsoISO = document.getElementById('fechaInicio').value;
+  const capital=p.monto, interesComp=p.interesTotal, interesMora=+(p.moraAcumulada||0), envioFisico=0.00;
+  const totalCobro=capital+interesComp+interesMora+envioFisico, itf=+(totalCobro*0.00005).toFixed(2), totalPagado=+(totalCobro+itf).toFixed(2);
+  const montoEnLetras=numeroALetrasSoles(totalPagado);
 
-  if (isNaN(monto) || monto <= 0) { mostrarNotificacion('Ingrese un monto válido mayor a 0', 'error'); return; }
-  if (isNaN(interes) || interes < 0) { mostrarNotificacion('Ingrese una tasa de interés válida', 'error'); return; }
-  if (isNaN(plazo) || plazo <= 0) { mostrarNotificacion('Ingrese un plazo válido mayor a 0', 'error'); return; }
-  if (!fechaDesembolsoISO) { mostrarNotificacion('Seleccione una fecha de desembolso', 'error'); return; }
+  const ahora=new Date(); const fechaHora=ahora.toLocaleDateString('es-PE')+' '+ahora.toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'});
 
-  const hoy = new Date();
-  const fechaSel = new Date(fechaDesembolsoISO + 'T00:00:00');
-  if (fechaSel < hoy.setHours(0,0,0,0)) {
-    mostrarNotificacion('La fecha de desembolso no puede ser anterior a hoy', 'error'); return;
-  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Cronograma de Pagos</title>
+  <style>
+    body{font-family:Arial,sans-serif;padding:20px}
+    .header{text-align:center;margin-bottom:14px}
+    .subtle{color:#4a5568;font-size:12px;text-align:center;margin-top:-6px}
+    .info{text-align:center;margin:16px 0;padding:12px;background:#f0f0f0;border-radius:8px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border:1px solid #000;padding:8px;text-align:center;font-size:13px}
+    th{background:#667eea;color:#fff;font-weight:bold;text-transform:uppercase}
+    .total{font-weight:bold;background:#e8f5e8}
+    .footer{text-align:center;margin-top:24px;font-size:12px}
+    .receipt{font-family:"Courier New",monospace;background:#fff;border:1px dashed #a0aec0;border-radius:8px;padding:14px;margin-top:10px}
+    .r-row{display:flex;justify-content:space-between;margin:4px 0}
+    .r-title{text-align:center;font-weight:700;margin-bottom:8px}
+    .r-muted{color:#4a5568;font-size:12px;text-align:center;margin-top:8px;white-space:pre-line}
+    hr{border:0;border-top:1px dashed #cbd5e0;margin:10px 0}
+    @page{size:A4;margin:16mm}
+  </style></head><body>
+    <div class="header"><h2>CRONOGRAMA DE PAGOS</h2></div>
+    <div class="subtle">Generado: ${fechaHora}</div>
 
-  const cuotaFija = calcularCuotaFija(monto, interes, plazo);
-  const montoTotal = cuotaFija * plazo;
-  const interesTotal = montoTotal - monto;
-  const fechaPrimeraCuotaISO = sumarMeses(fechaDesembolsoISO, 1);
-  const fechaUltimaCuotaISO = sumarMeses(fechaDesembolsoISO, plazo);
+    <div class="receipt">
+      <div class="r-title">COMPROBANTE / RESUMEN</div>
+      <div class="r-row"><span>Cliente:</span><span>${p.cliente}</span></div>
+      <div class="r-row"><span>Documento:</span><span>${p.documento}</span></div>
+      <div class="r-row"><span>Anal. Crédito:</span><span>${p.analista||'—'}</span></div>
+      <div class="r-row"><span>Nro. Préstamo:</span><span>${p.nroPrestamo||p.id}</span></div>
+      <div class="r-row"><span>Caja:</span><span>${p.caja||'—'}</span></div>
+      <hr>
+      <div class="r-row"><span>Capital</span><span>S/ ${capital.toFixed(2)}</span></div>
+      <div class="r-row"><span>Interés Compensatorio</span><span>S/ ${interesComp.toFixed(2)}</span></div>
+      <div class="r-row"><span>Int. Mor. Atr.</span><span>S/ ${interesMora.toFixed(2)}</span></div>
+      <div class="r-row"><span>Env. Físico EECC</span><span>S/ ${envioFisico.toFixed(2)}</span></div>
+      <hr>
+      <div class="r-row"><strong>Total Cobro</strong><strong>S/ ${totalCobro.toFixed(2)}</strong></div>
+      <div class="r-row"><span>I.T.F. 0.005%</span><span>S/ ${itf.toFixed(2)}</span></div>
+      <div class="r-row"><strong>Total Pagado</strong><strong>S/ ${totalPagado.toFixed(2)}</strong></div>
+      <hr>
+      <div class="r-row"><span>Son:</span><span>${montoEnLetras}</span></div>
+      <div class="r-row"><span>Cuotas Pagadas:</span><span>${p.cuotasPagadas||0}</span></div>
+      <div class="r-row"><span>Próximo pago:</span><span>${proximoTexto}</span></div>
+      <div class="r-muted">Los montos pendientes de pago no incluyen intereses moratorios futuros.
+Evite recargos pagando a tiempo.
+Este documento es válido para crédito fiscal.</div>
+    </div>
 
-  const prestamo = {
-    id: Date.now(),
-    cliente: clienteVerificado.nombre,
-    documento: clienteVerificado.documento,
-    fechaRegistro: new Date().toLocaleDateString('es-PE'),
-    fechaDesembolso: fechaDesembolsoISO,
-    fechaPrimeraCuota: fechaPrimeraCuotaISO,
-    fechaUltimaCuota: fechaUltimaCuotaISO,
-    monto, interes, interesTotal, plazo,
-    cuotaMensual: cuotaFija,
-    montoTotal
-  };
+    <div class="info">
+      <h3>${p.cliente}</h3>
+      <p>Monto: S/ ${p.monto.toFixed(2)}  |  Tasa: ${p.interes}%  |  Plazo: ${p.plazo} meses  |  Mora diaria: ${p.moraDiaria}%</p>
+      <p>Desembolso: ${formatearFechaParaTabla(p.fechaDesembolso)}  •  1ra Cuota: ${formatearFechaParaTabla(p.fechaPrimeraCuota)}  •  Última: ${formatearFechaParaTabla(p.fechaUltimaCuota)}</p>
+    </div>
 
-  prestamosRegistrados.push(prestamo);
-  guardarPrestamos();
-  actualizarListaPrestamos();
-  limpiarFormularioPrestamo();
-  mostrarNotificacion('Préstamo registrado exitosamente', 'success');
+    <table>
+      <thead><tr><th>MES</th><th>VENCIMIENTO</th><th>AMORTIZACIÓN</th><th>INTERÉS</th><th>CUOTA</th><th>SALDO</th></tr></thead>
+      <tbody>${
+        (()=>{let rows='',saldo=p.monto,iM=p.interes/100/12;
+          for(let i=1;i<=p.plazo;i++){
+            const v=sumarMeses(p.fechaDesembolso,i), f=formatearFechaParaTabla(v), inter=saldo*iM;
+            let amort=p.cuotaMensual-inter, cuota=p.cuotaMensual; if(i===p.plazo){amort=saldo;cuota=amort+inter}
+            saldo-=amort; rows+=`<tr><td>${i}</td><td>${f}</td><td>S/ ${amort.toFixed(2)}</td><td>S/ ${inter.toFixed(2)}</td><td>S/ ${cuota.toFixed(2)}</td><td>S/ ${saldo.toFixed(2)}</td></tr>`;
+          } return rows;
+        })()
+      }</tbody>
+      <tfoot><tr class="total"><td colspan="2" style="text-align:right;padding-right:10px;">TOTAL:</td><td>S/ ${p.monto.toFixed(2)}</td><td>S/ ${p.interesTotal.toFixed(2)}</td><td>S/ ${p.montoTotal.toFixed(2)}</td><td>S/ 0.00</td></tr></tfoot>
+    </table>
+
+    <div class="footer"><p>Documento generado automáticamente por el sistema de préstamos</p></div>
+    <script>setTimeout(()=>{if(window.print)window.print()},400)<\/script>
+  </body></html>`;
 }
-
-// ---------------------------
-// Cronograma (modal + impresión)
-// ---------------------------
-function generarCronogramaEnModal(prestamo) {
-  const cronogramaBody = document.getElementById('cronogramaBodyModal');
-  cronogramaBody.innerHTML = '';
-
-  document.getElementById('cronogramaClienteModal').textContent = prestamo.cliente;
-  document.getElementById('cronogramaDocumentoModal').textContent = `Documento: ${prestamo.documento}`;
-  document.getElementById('cronogramaDetallesModal').textContent =
-    `Monto: S/ ${prestamo.monto.toFixed(2)} | Tasa: ${prestamo.interes}% | Plazo: ${prestamo.plazo} meses`;
-
-  const cuotaFija = prestamo.cuotaMensual;
-  let saldoRestante = prestamo.monto;
-  let totalAmortizacion = 0;
-  let totalInteres = 0;
-
-  for (let i = 1; i <= prestamo.plazo; i++) {
-    const fechaPagoISO = sumarMeses(prestamo.fechaDesembolso, i);
-    const fechaFormateada = formatearFechaParaTabla(fechaPagoISO);
-    const tasaMensual = prestamo.interes / 100 / 12;
-    const interesCuota = saldoRestante * tasaMensual;
-    let amortizacionCuota = cuotaFija - interesCuota;
-    let cuota = cuotaFija;
-
-    if (i === prestamo.plazo) {
-      amortizacionCuota = saldoRestante;
-      cuota = amortizacionCuota + interesCuota;
-      saldoRestante = 0;
-    } else {
-      saldoRestante -= amortizacionCuota;
-    }
-
-    totalAmortizacion += amortizacionCuota;
-    totalInteres += interesCuota;
-
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${i}</td>
-      <td>${fechaFormateada}</td>
-      <td>S/ ${amortizacionCuota.toFixed(2)}</td>
-      <td>S/ ${interesCuota.toFixed(2)}</td>
-      <td>S/ ${cuota.toFixed(2)}</td>
-      <td>S/ ${saldoRestante.toFixed(2)}</td>
-    `;
-    cronogramaBody.appendChild(row);
-  }
-
-  document.getElementById('totalAmortizacionModal').textContent = `S/ ${totalAmortizacion.toFixed(2)}`;
-  document.getElementById('totalInteresModal').textContent = `S/ ${totalInteres.toFixed(2)}`;
-  document.getElementById('totalCuotaModal').textContent = `S/ ${(totalAmortizacion + totalInteres).toFixed(2)}`;
-  document.getElementById('saldoFinalModal').textContent = `S/ ${saldoRestante.toFixed(2)}`;
-
-  prestamoActualParaCronograma = prestamo;
-}
-
-function abrirModalCronograma(prestamoId) {
-  const prestamo = prestamosRegistrados.find(p => p.id === prestamoId);
-  if (prestamo) {
-    generarCronogramaEnModal(prestamo);
-    document.getElementById('cronogramaModal').style.display = 'block';
-  }
-}
-
-function cerrarModalCronograma() {
-  document.getElementById('cronogramaModal').style.display = 'none';
-  prestamoActualParaCronograma = null;
-}
-
-// Imprimir (permite guardar como PDF)
-function imprimirCronogramaActual() {
-  if (!prestamoActualParaCronograma) return;
-
-  const p = prestamoActualParaCronograma;
-  const printWindow = window.open('', '_blank');
-  const html = generarHTMLCronograma(p);
-
-  printWindow.document.write(html);
-  printWindow.document.close();
-  // Pequeño delay para asegurar carga antes de imprimir
-  setTimeout(() => {
-    printWindow.focus();
-    printWindow.print();
-  }, 250);
-}
-
-// ---------------------------
-// Compartir / Descargar PDF (sin librerías externas)
-// Abre una pestaña con el HTML del cronograma para que el usuario use "Guardar como PDF".
-// En móviles, además intenta usar Web Share con la URL (si está soportado).
-// ---------------------------
-async function compartirCronogramaPDF() {
-  if (!prestamoActualParaCronograma) {
-    mostrarNotificacion("Abre un cronograma antes de compartir.", "error");
-    return;
-  }
-  const p = prestamoActualParaCronograma;
-  const html = generarHTMLCronograma(p);
-
-  // Crear un Blob de HTML y abrir en una nueva pestaña
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-
-  // Intento de compartir URL (soportado en algunos navegadores móviles)
-  try {
-    if (navigator.share && typeof navigator.share === 'function') {
-      await navigator.share({
-        title: 'Cronograma de Pagos',
-        text: `Cronograma de ${p.cliente} (${p.documento}). Abre y guarda como PDF.`,
-        url
-      });
-      mostrarNotificacion("Enlace compartido. Abre y guarda como PDF.", "success");
-    } else {
-      mostrarNotificacion("Abierto en nueva pestaña. Usa 'Guardar como PDF' o compártelo.", "info");
-    }
-  } catch (_) {
-    mostrarNotificacion("Abierto en nueva pestaña. Usa 'Guardar como PDF' o compártelo.", "info");
-  }
-}
-
-// HTML reutilizable para impresión/compartir
-function generarHTMLCronograma(p) {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8"/>
-      <title>Cronograma de Pagos</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        .header { text-align: center; margin-bottom: 20px; }
-        .info { text-align: center; margin-bottom: 20px; padding: 15px; background: #f0f0f0; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #000; padding: 10px; text-align: center; }
-        th { background: #667eea; color: white; font-weight: bold; text-transform: uppercase; }
-        .total { font-weight: bold; background: #e8f5e8; }
-        .footer { text-align: center; margin-top: 30px; font-size: 12px; }
-        @page { size: A4; margin: 18mm; }
-      </style>
-    </head>
-    <body>
-      <div class="header"><h2>CRONOGRAMA DE PAGOS</h2></div>
-      <div class="info">
-        <h3>${p.cliente}</h3>
-        <p>Documento: ${p.documento}</p>
-        <p>Monto: S/ ${p.monto.toFixed(2)} | Tasa: ${p.interes}% | Plazo: ${p.plazo} meses</p>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>MES</th><th>VENCIMIENTO</th><th>AMORTIZACIÓN</th><th>INTERÉS</th><th>CUOTA</th><th>SALDO</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${(() => {
-            let rows = '';
-            let saldo = p.monto;
-            const tasaMensual = p.interes / 100 / 12;
-            for (let i = 1; i <= p.plazo; i++) {
-              const fechaPagoISO = sumarMeses(p.fechaDesembolso, i);
-              const fechaTab = formatearFechaParaTabla(fechaPagoISO);
-              const interesCuota = saldo * tasaMensual;
-              let amort = p.cuotaMensual - interesCuota;
-              let cuota = p.cuotaMensual;
-              if (i === p.plazo) { amort = saldo; cuota = amort + interesCuota; }
-              saldo -= amort;
-              rows += `<tr>
-                <td>${i}</td>
-                <td>${fechaTab}</td>
-                <td>S/ ${amort.toFixed(2)}</td>
-                <td>S/ ${interesCuota.toFixed(2)}</td>
-                <td>S/ ${cuota.toFixed(2)}</td>
-                <td>S/ ${saldo.toFixed(2)}</td>
-              </tr>`;
-            }
-            return rows;
-          })()}
-        </tbody>
-        <tfoot>
-          <tr class="total">
-            <td colspan="2" style="text-align:right;padding-right:10px;">TOTAL:</td>
-            <td>S/ ${p.monto.toFixed(2)}</td>
-            <td>S/ ${p.interesTotal.toFixed(2)}</td>
-            <td>S/ ${p.montoTotal.toFixed(2)}</td>
-            <td>S/ 0.00</td>
-          </tr>
-        </tfoot>
-      </table>
-      <div class="footer"><p>Documento generado automáticamente por el sistema de préstamos</p></div>
-      <script>
-        // Auto-abrir diálogo de impresión en la pestaña compartida si el usuario lo desea:
-        setTimeout(() => { if (window.print) window.print(); }, 400);
-      <\/script>
-    </body>
-    </html>
-  `;
-}
-
-// ---------------------------
-// Lista y limpieza de formulario
-// ---------------------------
-function actualizarListaPrestamos() {
-  const loansList = document.getElementById('loansList');
-  const totalPrestamos = document.getElementById('totalPrestamos');
-  totalPrestamos.textContent = prestamosRegistrados.length;
-
-  if (prestamosRegistrados.length === 0) {
-    loansList.innerHTML = '<p id="noLoans">No hay préstamos registrados aún.</p>';
-    return;
-  }
-
-  const prestamosOrdenados = [...prestamosRegistrados].sort((a, b) =>
-    new Date(b.fechaDesembolso) - new Date(a.fechaDesembolso)
-  );
-
-  let html = '';
-  prestamosOrdenados.forEach(prestamo => {
-    html += `
-      <div class="loan-item">
-        <button class="generate-btn" onclick="abrirModalCronograma(${prestamo.id})">Generar Cronograma</button>
-        <h4>${prestamo.cliente}</h4>
-        <div class="loan-details">
-          <div><strong>Registro:</strong> ${prestamo.fechaRegistro}</div>
-          <div><strong>Doc:</strong> ${prestamo.documento}</div>
-          <div><strong>Desembolso:</strong> ${formatearFechaParaMostrar(prestamo.fechaDesembolso)}</div>
-          <div><strong>Primera Cuota:</strong> ${formatearFechaParaMostrar(prestamo.fechaPrimeraCuota)}</div>
-          <div><strong>Última Cuota:</strong> ${formatearFechaParaMostrar(prestamo.fechaUltimaCuota)}</div>
-          <div><strong>Monto:</strong> S/ ${prestamo.monto.toFixed(2)}</div>
-          <div><strong>Interés:</strong> ${prestamo.interes}%</div>
-          <div><strong>Interés Total:</strong> S/ ${prestamo.interesTotal.toFixed(2)}</div>
-          <div><strong>Cuota:</strong> S/ ${prestamo.cuotaMensual.toFixed(2)}</div>
-          <div><strong>Plazo:</strong> ${prestamo.plazo} meses</div>
-          <div><strong>Total:</strong> S/ ${prestamo.montoTotal.toFixed(2)}</div>
-        </div>
-      </div>
-    `;
-  });
-
-  loansList.innerHTML = html;
-}
-
-function limpiarFormularioPrestamo() {
-  document.getElementById('monto').value = '';
-  document.getElementById('interes').value = '5';
-  document.getElementById('plazo').value = '12';
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('fechaInicio').value = today;
-  document.getElementById('interesCalculado').classList.add('hidden');
-  document.getElementById('fechaCalculada').classList.add('hidden');
-  document.getElementById('primeraCuota').classList.add('hidden');
-}
-
-// Cerrar modal al hacer clic fuera
-window.onclick = function(event) {
-  const modal = document.getElementById('cronogramaModal');
-  if (event.target === modal) cerrarModalCronograma();
-};
-
-// Inicial
-actualizarListaPrestamos();

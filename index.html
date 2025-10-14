@@ -14,6 +14,7 @@
     </header>
 
     <div class="main-content">
+      <!-- Columna izquierda -->
       <div class="card">
         <h2>Verificación de Cliente</h2>
 
@@ -45,26 +46,11 @@
 
         <div id="customerInfo" class="customer-info hidden">
           <h3>Información del Cliente</h3>
-          <div class="info-item">
-            <span class="info-label">Nombre/Razón Social:</span>
-            <span class="info-value" id="nombreCliente"></span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Documento:</span>
-            <span class="info-value" id="documentoCliente"></span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Tipo:</span>
-            <span class="info-value" id="tipoCliente"></span>
-          </div>
-          <div class="info-item" id="direccionItem">
-            <span class="info-label">Dirección:</span>
-            <span class="info-value" id="direccionCliente"></span>
-          </div>
-          <div class="info-item" id="estadoItem">
-            <span class="info-label">Estado:</span>
-            <span class="info-value" id="estadoCliente"></span>
-          </div>
+          <div class="info-item"><span class="info-label">Nombre/Razón Social:</span><span class="info-value" id="nombreCliente"></span></div>
+          <div class="info-item"><span class="info-label">Documento:</span><span class="info-value" id="documentoCliente"></span></div>
+          <div class="info-item"><span class="info-label">Tipo:</span><span class="info-value" id="tipoCliente"></span></div>
+          <div class="info-item"><span class="info-label">Dirección:</span><span class="info-value" id="direccionCliente"></span></div>
+          <div class="info-item"><span class="info-label">Estado:</span><span class="info-value" id="estadoCliente"></span></div>
         </div>
 
         <h2 style="margin-top: 30px;">Registrar Préstamo</h2>
@@ -77,6 +63,10 @@
           <input type="number" id="interes" placeholder="Ingrese tasa de interés" min="0" step="0.1" value="5">
         </div>
         <div class="form-group">
+          <label for="moraDiaria">Mora diaria (% sobre la cuota):</label>
+          <input type="number" id="moraDiaria" placeholder="Ej: 0.05" step="0.01" min="0" value="0.05">
+        </div>
+        <div class="form-group">
           <label for="plazo">Plazo (meses):</label>
           <input type="number" id="plazo" placeholder="Ingrese plazo en meses" min="1" value="12">
         </div>
@@ -84,58 +74,40 @@
           <label for="fechaInicio">Fecha de Desembolso:</label>
           <input type="date" id="fechaInicio">
         </div>
+        <div class="form-group">
+          <label for="analista">Analista de Crédito (opcional):</label>
+          <input type="text" id="analista" placeholder="Ej: John Daniel Parimango">
+        </div>
+        <div class="form-group">
+          <label for="caja">Caja (opcional):</label>
+          <input type="text" id="caja" placeholder="Ej: 3">
+        </div>
 
         <div id="interesCalculado" class="interest-calculation hidden">
           <h4>Cálculo de Interés</h4>
-          <div class="info-item">
-            <span class="info-label">Monto Prestado:</span>
-            <span class="info-value" id="montoPrestado"></span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Tasa de Interés:</span>
-            <span class="info-value" id="tasaInteres"></span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Interés Total:</span>
-            <span class="info-value" id="interesTotal"></span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Monto Total a Pagar:</span>
-            <span class="info-value" id="montoTotalPagar"></span>
-          </div>
+          <div class="info-item"><span class="info-label">Monto Prestado:</span><span class="info-value" id="montoPrestado"></span></div>
+          <div class="info-item"><span class="info-label">Tasa de Interés:</span><span class="info-value" id="tasaInteres"></span></div>
+          <div class="info-item"><span class="info-label">Interés Total:</span><span class="info-value" id="interesTotal"></span></div>
+          <div class="info-item"><span class="info-label">Monto Total a Pagar:</span><span class="info-value" id="montoTotalPagar"></span></div>
         </div>
 
         <div id="fechaCalculada" class="date-info hidden">
           <h4>Información de Fechas</h4>
-          <div class="info-item">
-            <span class="info-label">Fecha de Desembolso:</span>
-            <span class="info-value" id="fechaDesembolsoMostrada"></span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Primera Cuota:</span>
-            <span class="info-value" id="fechaPrimeraCuotaMostrada"></span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Última Cuota:</span>
-            <span class="info-value" id="fechaUltimaCuotaMostrada"></span>
-          </div>
+          <div class="info-item"><span class="info-label">Fecha de Desembolso:</span><span class="info-value" id="fechaDesembolsoMostrada"></span></div>
+          <div class="info-item"><span class="info-label">Primera Cuota:</span><span class="info-value" id="fechaPrimeraCuotaMostrada"></span></div>
+          <div class="info-item"><span class="info-label">Última Cuota:</span><span class="info-value" id="fechaUltimaCuotaMostrada"></span></div>
         </div>
 
         <div id="primeraCuota" class="first-payment hidden">
           <h4>Primera Cuota</h4>
-          <div class="info-item">
-            <span class="info-label">Fecha de Pago:</span>
-            <span class="info-value" id="fechaPrimeraCuota"></span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Monto de Cuota:</span>
-            <span class="info-value" id="montoPrimeraCuota"></span>
-          </div>
+          <div class="info-item"><span class="info-label">Fecha de Pago:</span><span class="info-value" id="fechaPrimeraCuota"></span></div>
+          <div class="info-item"><span class="info-label">Monto de Cuota:</span><span class="info-value" id="montoPrimeraCuota"></span></div>
         </div>
 
         <button class="btn" onclick="registrarPrestamo()" id="btnRegistrar" disabled>Registrar Préstamo</button>
       </div>
 
+      <!-- Columna derecha -->
       <div class="card">
         <h2>Préstamos Registrados</h2>
         <div class="stat-card">
@@ -145,9 +117,6 @@
         <div class="loans-list" id="loansList">
           <p id="noLoans">No hay préstamos registrados aún.</p>
         </div>
-
-        <!-- Botón para borrar datos locales -->
-        <button class="danger-btn" onclick="borrarDatosLocales()">Borrar datos locales</button>
       </div>
     </div>
   </div>
@@ -156,14 +125,14 @@
   <div id="cronogramaModal" class="modal">
     <div class="modal-content">
       <button class="close-modal" onclick="cerrarModalCronograma()">&times;</button>
-      <div class="cronograma-header">
-        <h2>CRONOGRAMA DE PAGOS</h2>
-      </div>
+
+      <div class="cronograma-header"><h2>CRONOGRAMA DE PAGOS</h2></div>
       <div class="cronograma-info">
         <h3 id="cronogramaClienteModal"></h3>
         <p id="cronogramaDocumentoModal"></p>
         <p id="cronogramaDetallesModal"></p>
       </div>
+
       <table class="cronograma-table">
         <thead>
           <tr>
@@ -178,7 +147,7 @@
         <tbody id="cronogramaBodyModal"></tbody>
         <tfoot>
           <tr class="total-row">
-            <td colspan="2" style="text-align: right; padding-right: 10px;">TOTAL:</td>
+            <td colspan="2" style="text-align:right;padding-right:10px;">TOTAL:</td>
             <td id="totalAmortizacionModal">S/ 0.00</td>
             <td id="totalInteresModal">S/ 0.00</td>
             <td id="totalCuotaModal">S/ 0.00</td>
@@ -187,11 +156,47 @@
         </tfoot>
       </table>
 
-      <!-- Botones de acción -->
+      <!-- Acciones principales -->
       <button class="print-cronograma-btn" onclick="imprimirCronogramaActual()">Imprimir Cronograma</button>
       <button class="print-cronograma-btn" onclick="compartirCronogramaPDF()">Compartir / Descargar PDF</button>
+
+      <!-- Panel de pagos -->
+      <div class="pay-panel">
+        <h4>Registrar pago de la siguiente cuota</h4>
+        <div class="pay-row">
+          <div id="proximaInfoTexto">Próxima cuota: —</div>
+          <input type="date" id="fechaPagoInput">
+          <button class="print-cronograma-btn" onclick="registrarPagoCuotaSiguiente()">Registrar pago</button>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;margin-top:12px;">
+          <strong>Mora diaria (%):</strong>
+          <input class="inline-input" type="number" id="moraEditableInput" step="0.01" min="0">
+          <button class="mini-btn" onclick="actualizarMoraDiariaPrestamo()">Guardar mora</button>
+        </div>
+
+        <h4 style="margin-top:16px;">Historial de pagos</h4>
+        <table class="table-mini">
+          <thead>
+            <tr>
+              <th>Cuota</th>
+              <th>Fecha de pago</th>
+              <th>Mora cobrada</th>
+              <th>Monto cuota</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="historialPagosBody">
+            <tr><td colspan="5">Sin pagos aún.</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
+
+  <!-- Generación de PDF real -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" referrerpolicy="no-referrer"></script>
 
   <script src="script.js"></script>
 </body>
